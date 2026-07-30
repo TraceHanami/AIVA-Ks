@@ -1,0 +1,5 @@
+# heavy deps — only install in the intent-prediction service image,
+# never in the API backend
+torch==2.4.1
+scikit-learn==1.5.2
+networkx==3.3

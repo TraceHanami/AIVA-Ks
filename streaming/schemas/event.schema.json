@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AIVA-KS Raw Event",
+  "type": "object",
+  "required": ["time", "host_id", "pid", "syscall", "category"],
+  "properties": {
+    "time": { "type": "string", "format": "date-time" },
+    "host_id": { "type": "string" },
+    "pid": { "type": "integer" },
+    "tid": { "type": "integer" },
+    "ppid": { "type": "integer" },
+    "uid": { "type": "integer" },
+    "comm": { "type": "string" },
+    "syscall": {
+      "type": "string",
+      "enum": ["execve", "fork", "clone", "open", "read", "write", "unlink",
+               "connect", "accept", "ptrace", "mprotect", "mmap", "socket",
+               "bind", "listen"]
+    },
+    "category": { "type": "string", "enum": ["process", "file", "network", "memory"] },
+    "args": { "type": "object" },
+    "return_code": { "type": "integer" }
+  }
+}

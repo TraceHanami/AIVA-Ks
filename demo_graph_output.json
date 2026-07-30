@@ -1,0 +1,104 @@
+{
+  "host_id": "demo-host-01",
+  "nodes": [
+    {
+      "id": "Process:demo-host-01:4210",
+      "type": "Process",
+      "risk": 0.05,
+      "label": "invoice.exe",
+      "first_seen": "2026-07-02T10:00:00Z",
+      "cmdline": "/tmp/invoice.exe"
+    },
+    {
+      "id": "Process:demo-host-01:4260",
+      "type": "Process",
+      "risk": 0.8,
+      "label": "child",
+      "first_seen": "2026-07-02T10:00:02Z"
+    },
+    {
+      "id": "MemoryRegion:demo-host-01:4260:140234",
+      "type": "MemoryRegion",
+      "risk": 0.5599999999999999,
+      "label": "RWX region"
+    },
+    {
+      "id": "Process:demo-host-01:890",
+      "type": "Process",
+      "risk": 0.5599999999999999,
+      "label": "ptrace_target"
+    },
+    {
+      "id": "File:demo-host-01:/etc/shadow",
+      "type": "File",
+      "risk": 0.39199999999999996,
+      "label": "/etc/shadow"
+    },
+    {
+      "id": "File:demo-host-01:/tmp/.cache_dump",
+      "type": "File",
+      "risk": 0.39199999999999996,
+      "label": "/tmp/.cache_dump"
+    },
+    {
+      "id": "Socket:demo-host-01:203.0.113.55:443",
+      "type": "Socket",
+      "risk": 0.5599999999999999,
+      "label": "203.0.113.55:443"
+    },
+    {
+      "id": "Process:demo-host-01:5000",
+      "type": "Process",
+      "risk": 0.0,
+      "label": "cron",
+      "first_seen": "2026-07-02T10:00:11Z",
+      "cmdline": "/usr/sbin/cron"
+    }
+  ],
+  "edges": [
+    {
+      "source": "Process:demo-host-01:4210",
+      "target": "Process:demo-host-01:4260",
+      "relation": "creates",
+      "weight": 0.05,
+      "event_id": 2
+    },
+    {
+      "source": "Process:demo-host-01:4260",
+      "target": "MemoryRegion:demo-host-01:4260:140234",
+      "relation": "loads",
+      "weight": 0.1,
+      "event_id": 3,
+      "suspicious": true
+    },
+    {
+      "source": "Process:demo-host-01:4260",
+      "target": "Process:demo-host-01:890",
+      "relation": "injects",
+      "weight": 0.8,
+      "event_id": 4,
+      "ptrace_request": 6
+    },
+    {
+      "source": "Process:demo-host-01:4260",
+      "target": "Socket:demo-host-01:203.0.113.55:443",
+      "relation": "connects",
+      "weight": 0.15,
+      "event_id": 7
+    },
+    {
+      "source": "Process:demo-host-01:890",
+      "target": "File:demo-host-01:/etc/shadow",
+      "relation": "reads",
+      "weight": 0.05,
+      "event_id": 5
+    },
+    {
+      "source": "Process:demo-host-01:890",
+      "target": "File:demo-host-01:/tmp/.cache_dump",
+      "relation": "writes",
+      "weight": 0.1,
+      "event_id": 6
+    }
+  ]
+}
