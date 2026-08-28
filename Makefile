@@ -1,7 +1,7 @@
-.PHONY: help setup test demo lint clean docker-up docker-down
+.PHONY: help setup test demo lint clean docker-up docker-down run-backend run-ui run
 
-PYTHON ?= ./venv/bin/python
-PYTEST ?= ./venv/bin/pytest
+PYTHON ?= ./.venv/bin/python
+PYTEST ?= ./.venv/bin/pytest
 
 help:
 	@echo "AIVA-KS — Developer Tooling Commands"
@@ -9,6 +9,8 @@ help:
 	@echo "  make setup       Install dependencies in virtualenv"
 	@echo "  make test        Run full unit & integration test suite"
 	@echo "  make demo        Run zero-infra end-to-end attack pipeline demo"
+	@echo "  make run-backend Run FastAPI AI engine server on :8000"
+	@echo "  make run-ui      Run React SOC Dashboard on :3000"
 	@echo "  make lint        Run Python syntax & import checks"
 	@echo "  make clean       Clean build artifacts, cache files, and logs"
 	@echo "  make docker-up   Bring up Postgres, Kafka, Zookeeper, and API container"
@@ -23,6 +25,12 @@ test:
 demo:
 	$(PYTHON) demo_full_pipeline.py
 
+run-backend:
+	$(PYTHON) -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+
+run-ui:
+	cd frontend && npm run dev -- --host 0.0.0.0 --port 3000
+
 lint:
 	$(PYTHON) -c "import glob, py_compile; [py_compile.compile(f, doraise=True) for f in glob.glob('**/*.py', recursive=True) if 'venv' not in f]"
 
@@ -36,3 +44,4 @@ docker-up:
 
 docker-down:
 	cd docker && docker compose down
+
