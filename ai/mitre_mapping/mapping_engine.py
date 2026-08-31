@@ -93,8 +93,8 @@ class MitreMapper:
 
     def _detect_credential_access(self, events) -> list[TechniqueMatch]:
         sensitive_paths = ("/etc/shadow", "/etc/passwd", "/etc/gshadow")
-        hits = [e for e in events if e["syscall"] in ("open", "read")
-                and any(p in e.get("args", {}).get("filename", "") for p in sensitive_paths)]
+        hits = [e for e in events if e.get("syscall") in ("open", "openat", "read")
+                and any(p in (e.get("args", {}).get("filename", "") or e.get("target_path", "")) for p in sensitive_paths)]
         if not hits:
             return []
         return [TechniqueMatch(

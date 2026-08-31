@@ -26,10 +26,14 @@ demo:
 	$(PYTHON) demo_full_pipeline.py
 
 run-backend:
-	$(PYTHON) -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+	$(PYTHON) -m uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000 --reload
 
 run-ui:
-	cd frontend && npm run dev -- --host 0.0.0.0 --port 3000
+	cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
+
+run:
+	@echo "Starting backend and frontend services..."
+	@make -j 2 run-backend run-ui
 
 lint:
 	$(PYTHON) -c "import glob, py_compile; [py_compile.compile(f, doraise=True) for f in glob.glob('**/*.py', recursive=True) if 'venv' not in f]"
