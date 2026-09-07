@@ -1,7 +1,8 @@
 .PHONY: help setup test demo lint clean docker-up docker-down run-backend run-ui run
 
-PYTHON ?= ./.venv/bin/python
-PYTEST ?= ./.venv/bin/pytest
+VENV ?= $(CURDIR)/.venv
+PYTHON ?= $(shell if [ -f $(VENV)/bin/python ]; then echo $(VENV)/bin/python; else which python3; fi)
+PYTEST ?= $(shell if [ -f $(VENV)/bin/pytest ]; then echo $(VENV)/bin/pytest; else which pytest; fi)
 
 help:
 	@echo "AIVA-KS — Developer Tooling Commands"
