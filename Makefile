@@ -15,6 +15,7 @@ help:
 	@echo "  make clean       Clean build artifacts, cache files, and logs"
 	@echo "  make docker-up   Bring up Postgres, Kafka, Zookeeper, and API container"
 	@echo "  make docker-down Stop containerized infrastructure"
+	@echo "  make run         Run both backend and UI concurrently"
 
 setup:
 	$(PYTHON) -m pip install -e .[dev,backend]
@@ -33,7 +34,7 @@ run-ui:
 
 run:
 	@echo "Starting backend and frontend services..."
-	@make -j 2 run-backend run-ui
+	@$(MAKE) -j 2 run-backend run-ui
 
 lint:
 	$(PYTHON) -c "import glob, py_compile; [py_compile.compile(f, doraise=True) for f in glob.glob('**/*.py', recursive=True) if 'venv' not in f]"
