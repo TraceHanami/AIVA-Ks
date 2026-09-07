@@ -1,4 +1,4 @@
-.PHONY: help setup test demo lint clean docker-up docker-down run-backend run-ui run
+.PHONY: help setup test demo lint clean docker-up docker-down run-backend run-ui run daemon
 
 VENV ?= $(CURDIR)/.venv
 PYTHON ?= $(shell if [ -f $(VENV)/bin/python ]; then echo $(VENV)/bin/python; else which python3; fi)
@@ -17,6 +17,7 @@ help:
 	@echo "  make docker-up   Bring up Postgres, Kafka, Zookeeper, and API container"
 	@echo "  make docker-down Stop containerized infrastructure"
 	@echo "  make run         Run both backend and UI concurrently"
+	@echo "  make daemon      Install & start as systemd Linux Defender service"
 
 setup:
 	$(PYTHON) -m pip install -e .[dev,backend]
@@ -48,6 +49,9 @@ run-ui:
 run:
 	@echo "Starting backend and frontend services..."
 	@$(MAKE) -j 2 run-backend run-ui
+
+daemon:
+	@sudo ./install_ubuntu_daemon.sh
 
 lint:
 	$(PYTHON) -c "import glob, py_compile; [py_compile.compile(f, doraise=True) for f in glob.glob('**/*.py', recursive=True) if 'venv' not in f]"

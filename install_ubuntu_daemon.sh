@@ -17,8 +17,7 @@ if [ ! -d "$CURRENT_DIR/.venv" ]; then
 fi
 
 echo "[*] Installing required Linux security & API dependencies..."
-"$CURRENT_DIR/.venv/bin/pip" install -q -r "$CURRENT_DIR/backend/requirements.txt"
-"$CURRENT_DIR/.venv/bin/pip" install -q psutil networkx uvicorn fastapi pydantic
+"$CURRENT_DIR/.venv/bin/pip" install -q -e "$CURRENT_DIR[dev,backend]"
 
 # 2. Build Frontend UI
 if [ -d "$CURRENT_DIR/frontend" ]; then
