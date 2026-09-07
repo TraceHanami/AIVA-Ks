@@ -289,7 +289,7 @@ export default function App() {
   useEffect(() => {
     fetchDashboard()
     fetchChatHistory()
-    const interval = setInterval(fetchDashboard, 3000)
+    const interval = setInterval(fetchDashboard, 1000)
     return () => clearInterval(interval)
   }, [fetchDashboard, fetchChatHistory])
 

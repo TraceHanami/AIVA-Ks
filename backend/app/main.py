@@ -83,11 +83,13 @@ async def live_collector_worker(app_manager):
 
     print(f"[+] Baseline initialized with {len(st.events)} live host events.")
 
-    # 3. Continuous real-time polling loop
+    # 3. Continuous real-time polling loop (Ultra-fast 0.5s cadence)
     seen_pids = set(psutil.pids())
+    tick = 0
     while True:
         try:
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(0.5)
+            tick += 1
             current_pids = set(psutil.pids())
             new_pids = current_pids - seen_pids
 
@@ -126,26 +128,27 @@ async def live_collector_worker(app_manager):
 
             seen_pids = current_pids
 
-            # Sample active network sockets
-            try:
-                for conn in psutil.net_connections(kind='inet'):
-                    if conn.raddr and conn.pid:
-                        try:
-                            p = psutil.Process(conn.pid)
-                            comm = p.name()
-                        except Exception:
-                            comm = "network_proc"
-                        st.add_event({
-                            "event_type": "connect",
-                            "pid": conn.pid,
-                            "ppid": 1,
-                            "comm": comm,
-                            "target_ip": conn.raddr.ip,
-                            "target_port": conn.raddr.port,
-                            "anomaly_score": 0.05,
-                        })
-            except Exception:
-                pass
+            # Sample active network sockets every 3 ticks (1.5s) to avoid system call overhead
+            if tick % 3 == 0:
+                try:
+                    for conn in psutil.net_connections(kind='inet'):
+                        if conn.raddr and conn.pid:
+                            try:
+                                p = psutil.Process(conn.pid)
+                                comm = p.name()
+                            except Exception:
+                                comm = "network_proc"
+                            st.add_event({
+                                "event_type": "connect",
+                                "pid": conn.pid,
+                                "ppid": 1,
+                                "comm": comm,
+                                "target_ip": conn.raddr.ip,
+                                "target_port": conn.raddr.port,
+                                "anomaly_score": 0.05,
+                            })
+                except Exception:
+                    pass
 
         except asyncio.CancelledError:
             break
