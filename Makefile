@@ -20,6 +20,10 @@ help:
 
 setup:
 	$(PYTHON) -m pip install -e .[dev,backend]
+	@if command -v npm >/dev/null 2>&1 && [ -d frontend ]; then \
+		echo "[*] Installing frontend node packages..."; \
+		(cd frontend && npm install); \
+	fi
 
 test:
 	$(PYTEST) tests/ -v
@@ -31,7 +35,15 @@ run-backend:
 	$(PYTHON) -m uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000 --reload
 
 run-ui:
-	cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
+	@if command -v npm >/dev/null 2>&1; then \
+		if [ ! -d frontend/node_modules ]; then \
+			echo "[*] Initializing frontend dependencies (npm install)..."; \
+			(cd frontend && npm install); \
+		fi; \
+		cd frontend && npm run dev -- --host 0.0.0.0 --port 5173; \
+	else \
+		echo "[!] Node.js / npm is not installed. To use the Web UI dashboard, install npm via: sudo apt install -y nodejs npm"; \
+	fi
 
 run:
 	@echo "Starting backend and frontend services..."
