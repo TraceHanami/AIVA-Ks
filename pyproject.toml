@@ -11,7 +11,7 @@ requires-python = ">=3.9"
 authors = [
     { name = "AIVA-KS Core Team" }
 ]
-license = { text = "MIT" }
+license = "MIT"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Information Technology",
@@ -58,3 +58,7 @@ target-version = "py310"
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP", "N"]
 ignore = ["E501"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ai*", "backend*", "response-engine*"]
