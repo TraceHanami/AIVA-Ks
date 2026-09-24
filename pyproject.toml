@@ -46,10 +46,14 @@ backend = [
     "argon2-cffi>=23.1.0",
 ]
 
+[project.scripts]
+chronos = "chronos.cli.main:main"
+
 [tool.pytest.ini_options]
 minversion = "7.0"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+pythonpath = ["."]
 addopts = "-v --strict-markers"
 
 [tool.ruff]
@@ -62,4 +66,4 @@ ignore = ["E501"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["ai*", "backend*", "response-engine*"]
+include = ["chronos*", "ai*", "backend*", "response-engine*"]

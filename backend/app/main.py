@@ -22,10 +22,18 @@ from ai.graph_engine.graph_builder import BehavioralGraph
 from ai.mitre_mapping.mapping_engine import MitreMapper
 from ai.scanner import SignatureEngine
 from ai.threat_heatmap.heatmap_engine import ThreatHeatmapEngine
+from ai.threat_intel.threat_intel_engine import ThreatIntelEngine
+from ai.ueba.ueba_engine import UebaEngine
+from app.services.case_service import CaseService
+from app.services.replay_service import ReplayService
 from policy_engine import PolicyEngine, ResponseExecutor
 from tests.test_pipeline import ATTACK_EVENTS, BENIGN_EVENTS, HOST
 
 scanner = SignatureEngine()
+threat_intel = ThreatIntelEngine()
+ueba = UebaEngine()
+case_service = CaseService()
+replay_service = ReplayService()
 
 
 
@@ -281,6 +289,9 @@ class SecurityState:
             args["prot_flags"] = normalized["prot_flags"]
             if "rwx" in str(normalized["prot_flags"]).lower() or str(normalized["prot_flags"]) == "7":
                 normalized.setdefault("features", {})["rwx_mprotect_flag"] = True
+
+        # Enrich event via Threat Intelligence Fusion Engine
+        normalized = threat_intel.enrich_event(normalized)
 
         self.events.append(normalized)
         self.graph.ingest_event(normalized)
@@ -581,5 +592,153 @@ async def scan_directory_endpoint(req: ScanRequest):
             for t in threats
         ]
     }
+
+
+# ==============================================================================
+# v2.0 MODULE ENDPOINTS (Threat Intel, Case Workspace, UEBA, Replay)
+# ==============================================================================
+
+# 1. Threat Intelligence Fusion (Module 11)
+@app.get("/api/threat_intel/feed")
+async def get_threat_intel_feed():
+    return {
+        "ioc_count": len(threat_intel.feed),
+        "indicators": [
+            {
+                "indicator": i.indicator,
+                "indicator_type": i.indicator_type,
+                "threat_actor": i.threat_actor,
+                "campaign": i.campaign,
+                "severity": i.severity,
+                "confidence": i.confidence,
+                "description": i.description,
+                "tags": i.tags,
+            }
+            for i in threat_intel.feed.values()
+        ],
+    }
+
+
+@app.get("/api/threat_intel/lookup")
+async def lookup_threat_indicator(query: str):
+    hit = threat_intel.lookup(query)
+    if not hit:
+        return {"hit": False, "query": query}
+    return {
+        "hit": True,
+        "indicator": {
+            "indicator": hit.indicator,
+            "indicator_type": hit.indicator_type,
+            "threat_actor": hit.threat_actor,
+            "campaign": hit.campaign,
+            "severity": hit.severity,
+            "confidence": hit.confidence,
+            "description": hit.description,
+            "tags": hit.tags,
+        },
+    }
+
+
+# 2. Case Management Workspace (Module 12)
+class CreateCaseRequest(BaseModel):
+    title: str
+    host_id: str = "cachyos-x8664"
+    severity: str = "HIGH"
+    assigned_to: str = "Lead_SOC_Analyst"
+    evidence_event_ids: Optional[list[int]] = []
+    mitre_technique_ids: Optional[list[str]] = []
+
+
+class AddNoteRequest(BaseModel):
+    author: str = "Lead_SOC_Analyst"
+    content: str
+
+
+@app.get("/api/cases")
+async def list_cases():
+    return {"cases": case_service.list_cases()}
+
+
+@app.post("/api/cases")
+async def create_case(req: CreateCaseRequest):
+    c = case_service.create_case(
+        title=req.title,
+        host_id=req.host_id,
+        severity=req.severity,
+        assigned_to=req.assigned_to,
+        evidence_event_ids=req.evidence_event_ids,
+        mitre_technique_ids=req.mitre_technique_ids,
+    )
+    return {"status": "created", "case": c.to_dict()}
+
+
+@app.get("/api/cases/{case_id}")
+async def get_case(case_id: str):
+    c = case_service.get_case(case_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return {"case": c.to_dict()}
+
+
+@app.post("/api/cases/{case_id}/notes")
+async def add_case_note(case_id: str, req: AddNoteRequest):
+    try:
+        note = case_service.add_note(case_id, author=req.author, content=req.content)
+        return {"status": "note_added", "note": note.__dict__}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+
+@app.get("/api/cases/{case_id}/export")
+async def export_case_binder(case_id: str):
+    try:
+        binder = case_service.export_case_binder(case_id)
+        return binder
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+
+# 3. User & Entity Behavior Analytics (Module 17)
+@app.get("/api/ueba/anomalies")
+async def get_ueba_anomalies(host: Optional[str] = "live"):
+    st = manager.get_state(host)
+    anomalies = ueba.analyze_events(st.events)
+    return {
+        "host_id": st.host_id,
+        "anomaly_count": len(anomalies),
+        "anomalies": [
+            {
+                "user_id": a.user_id,
+                "user_name": a.user_name,
+                "anomaly_type": a.anomaly_type,
+                "severity": a.severity,
+                "anomaly_score": a.anomaly_score,
+                "evidence": a.evidence,
+                "timestamp": a.timestamp,
+            }
+            for a in anomalies
+        ],
+    }
+
+
+# 4. Digital Twin Attack Simulation & Replay (Module 19)
+class BuildReplayRequest(BaseModel):
+    host_id: str = "cachyos-x8664"
+
+
+@app.post("/api/replay/build")
+async def build_replay_session(req: BuildReplayRequest, host: Optional[str] = "test"):
+    st = manager.get_state(host)
+    session_id = replay_service.build_digital_twin_replay(req.host_id, st.events)
+    return {"status": "built", "session_id": session_id, "host_id": req.host_id}
+
+
+@app.get("/api/replay/step")
+async def get_replay_step(session_id: str, step: int = 1):
+    sn = replay_service.get_snapshot(session_id, step)
+    if not sn:
+        raise HTTPException(status_code=404, detail="Replay session or step not found")
+    return sn
+
 
 

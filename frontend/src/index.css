@@ -3,52 +3,58 @@
 
 @layer base {
   :root {
-    --font-mono: 'JetBrains Mono', 'Fira Code', 'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
   }
   body {
-    @apply bg-[#0b0f17] text-slate-200 antialiased min-h-screen selection:bg-cyan-500/30 selection:text-cyan-200;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: #0b0e14;
+    color: #cbd5e1;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
-/* Custom SOC scrollbar */
+.font-sans {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Custom Scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #0b0f17;
+  background: #0b0e14;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
-  border-radius: 3px;
+  background: #1e2638;
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: #2d374d;
 }
 
-/* React Flow custom dark SOC node styling */
+/* React Flow Custom Styling for Modern Dark Theme */
 .react-flow__background {
-  background-color: #080c14 !important;
+  background-color: #090c12 !important;
 }
 .react-flow__controls {
-  background-color: #111827 !important;
-  border: 1px solid #1f2937 !important;
+  background-color: #121722 !important;
+  border: 1px solid #1e2638 !important;
   border-radius: 8px !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
 }
 .react-flow__controls-button {
-  background-color: #111827 !important;
-  border-bottom: 1px solid #1f2937 !important;
-  fill: #9ca3af !important;
+  background-color: #121722 !important;
+  border-bottom: 1px solid #1e2638 !important;
+  fill: #94a3b8 !important;
 }
 .react-flow__controls-button:hover {
-  background-color: #1f2937 !important;
-  fill: #38bdf8 !important;
+  background-color: #1e2638 !important;
+  fill: #60a5fa !important;
 }
-.react-flow__edge-path {
-  stroke: #475569 !important;
-  stroke-width: 1.5px !important;
-}
-
-

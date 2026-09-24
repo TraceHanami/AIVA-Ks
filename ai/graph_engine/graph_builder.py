@@ -29,6 +29,14 @@ EDGE_WEIGHTS = {
 }
 
 
+ASSET_MULTIPLIERS = {
+    "DOMAIN_CONTROLLER": 1.5,
+    "DATABASE_SERVER": 1.3,
+    "DEVELOPER_HOST": 1.1,
+    "WORKSTATION": 1.0,
+}
+
+
 @dataclass
 class NodeAttrs:
     node_type: str          # Process|Thread|File|Socket|MemoryRegion
@@ -41,8 +49,10 @@ class NodeAttrs:
 class BehavioralGraph:
     """One instance per host (or per investigation session)."""
 
-    def __init__(self, host_id: str):
+    def __init__(self, host_id: str, asset_type: str = "WORKSTATION"):
         self.host_id = host_id
+        self.asset_type = asset_type.upper()
+        self.asset_multiplier = ASSET_MULTIPLIERS.get(self.asset_type, 1.0)
         self.g = nx.MultiDiGraph()
 
     def _node_id(self, node_type: str, key: str) -> str:
@@ -125,7 +135,8 @@ class BehavioralGraph:
                 inherited = 0.0
                 for pred in self.g.predecessors(n):
                     inherited = max(inherited, self.g.nodes[pred]["risk"] * decay)
-                updates[n] = min(1.0, max(self.g.nodes[n]["risk"], inherited))
+                raw_risk = max(self.g.nodes[n]["risk"], inherited)
+                updates[n] = min(1.0, raw_risk * self.asset_multiplier)
             for n, r in updates.items():
                 self.g.nodes[n]["risk"] = r
 
