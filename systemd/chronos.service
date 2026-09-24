@@ -1,0 +1,21 @@
+[Unit]
+Description=CHRONOS Cyber Threat Understanding & Response OS Daemon
+Documentation=https://github.com/TraceHanami/AIVA-Ks
+After=network.target network-online.target chronos-boot-scan.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/chronos
+ExecStart=/opt/chronos/.venv/bin/uvicorn chronos.api.app:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5s
+LimitNOFILE=65536
+LimitNPROC=4096
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=chronos
+
+[Install]
+WantedBy=multi-user.target

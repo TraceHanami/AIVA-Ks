@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 import asyncio
 from datetime import datetime, timezone
 import json
@@ -6,6 +7,7 @@ import socket
 import sys
 import uuid
 from typing import Any, Optional
+import psutil
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,14 +20,166 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 from ai.explainability.explainer import AttackNarrativeGenerator, EvidenceExtractor, TemplateNarrator
 from ai.graph_engine.graph_builder import BehavioralGraph
 from ai.mitre_mapping.mapping_engine import MitreMapper
+from ai.scanner import SignatureEngine
 from ai.threat_heatmap.heatmap_engine import ThreatHeatmapEngine
-from policy_engine import PolicyEngine
+from ai.threat_intel.threat_intel_engine import ThreatIntelEngine
+from ai.ueba.ueba_engine import UebaEngine
+from app.services.case_service import CaseService
+from app.services.replay_service import ReplayService
+from policy_engine import PolicyEngine, ResponseExecutor
 from tests.test_pipeline import ATTACK_EVENTS, BENIGN_EVENTS, HOST
+
+scanner = SignatureEngine()
+threat_intel = ThreatIntelEngine()
+ueba = UebaEngine()
+case_service = CaseService()
+replay_service = ReplayService()
+
+
+
+async def live_collector_worker(app_manager):
+    """Background async worker that collects live host telemetry and feeds the live security state."""
+    print(f"[*] Starting automatic live host telemetry collector for {app_manager.live_host_id}...")
+    st = app_manager.live_state
+
+    # 1. Baseline process tree snapshot
+    count = 0
+    for proc in psutil.process_iter(['pid', 'ppid', 'name', 'cmdline']):
+        try:
+            pinfo = proc.info
+            pid = pinfo['pid']
+            ppid = pinfo['ppid'] or 1
+            comm = pinfo['name'] or f"proc_{pid}"
+            cmdline = " ".join(pinfo['cmdline'] or [])
+
+            st.add_event({
+                "event_type": "execve",
+                "pid": pid,
+                "ppid": ppid,
+                "comm": comm,
+                "target_path": cmdline[:100] if cmdline else f"/{comm}",
+                "anomaly_score": 0.0,
+            })
+            count += 1
+            if count >= 35:
+                break
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+    # 2. Initial network connections
+    try:
+        connections = psutil.net_connections(kind='inet')
+        for conn in connections:
+            if conn.raddr and conn.pid:
+                try:
+                    p = psutil.Process(conn.pid)
+                    comm = p.name()
+                except Exception:
+                    comm = "network_proc"
+
+                st.add_event({
+                    "event_type": "connect",
+                    "pid": conn.pid,
+                    "ppid": 1,
+                    "comm": comm,
+                    "target_ip": conn.raddr.ip,
+                    "target_port": conn.raddr.port,
+                    "anomaly_score": 0.05,
+                })
+    except (psutil.AccessDenied, Exception):
+        pass
+
+    print(f"[+] Baseline initialized with {len(st.events)} live host events.")
+
+    # 3. Continuous real-time polling loop (Ultra-fast 0.5s cadence)
+    seen_pids = set(psutil.pids())
+    tick = 0
+    while True:
+        try:
+            await asyncio.sleep(0.5)
+            tick += 1
+            current_pids = set(psutil.pids())
+            new_pids = current_pids - seen_pids
+
+            for pid in new_pids:
+                try:
+                    p = psutil.Process(pid)
+                    ppid = p.ppid()
+                    comm = p.name()
+                    cmdline = " ".join(p.cmdline())
+
+                    anomaly = 0.0
+                    if any(susp in comm.lower() for susp in ["bash", "sh", "python", "curl", "wget", "nmap", "nc", "socat"]):
+                        anomaly = 0.25
+
+                    # Perform real-time on-access static & signature scan on executed binary path
+                    try:
+                        exe_path = p.exe()
+                        if exe_path and os.path.exists(exe_path):
+                            scan_res = scanner.scan_file(exe_path)
+                            if scan_res.is_threat:
+                                anomaly = max(anomaly, scan_res.confidence)
+                                print(f"[DEFENDER ALERT] Malicious binary detected on-access: {exe_path} ({scan_res.threat_name})")
+                    except (psutil.AccessDenied, Exception):
+                        pass
+
+                    st.add_event({
+                        "event_type": "execve",
+                        "pid": pid,
+                        "ppid": ppid,
+                        "comm": comm,
+                        "target_path": cmdline[:120] if cmdline else f"/{comm}",
+                        "anomaly_score": anomaly,
+                    })
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+
+            seen_pids = current_pids
+
+            # Sample active network sockets every 3 ticks (1.5s) to avoid system call overhead
+            if tick % 3 == 0:
+                try:
+                    for conn in psutil.net_connections(kind='inet'):
+                        if conn.raddr and conn.pid:
+                            try:
+                                p = psutil.Process(conn.pid)
+                                comm = p.name()
+                            except Exception:
+                                comm = "network_proc"
+                            st.add_event({
+                                "event_type": "connect",
+                                "pid": conn.pid,
+                                "ppid": 1,
+                                "comm": comm,
+                                "target_ip": conn.raddr.ip,
+                                "target_port": conn.raddr.port,
+                                "anomaly_score": 0.05,
+                            })
+                except Exception:
+                    pass
+
+        except asyncio.CancelledError:
+            break
+        except Exception:
+            await asyncio.sleep(2.0)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(live_collector_worker(manager))
+    yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
 
 app = FastAPI(
     title="AIVA-KS API",
     description="AI-Powered Intelligent Kernel Security Visualizer & Response Engine",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -135,6 +289,9 @@ class SecurityState:
             args["prot_flags"] = normalized["prot_flags"]
             if "rwx" in str(normalized["prot_flags"]).lower() or str(normalized["prot_flags"]) == "7":
                 normalized.setdefault("features", {})["rwx_mprotect_flag"] = True
+
+        # Enrich event via Threat Intelligence Fusion Engine
+        normalized = threat_intel.enrich_event(normalized)
 
         self.events.append(normalized)
         self.graph.ingest_event(normalized)
@@ -280,6 +437,23 @@ async def approve_action(req: ActionApproveRequest, host: Optional[str] = "live"
         if action["action_id"] == req.action_id:
             if req.approved:
                 action["status"] = "executed"
+                executor = ResponseExecutor()
+                # Build ResponseAction to invoke real remediation logic
+                from policy_engine import ActionType, ResponseAction, ResponseMode
+                try:
+                    act_obj = ResponseAction(
+                        response_id=action["action_id"],
+                        action_type=ActionType(action["action_type"]),
+                        target=action.get("target", {}),
+                        triggered_by=action.get("policy_name", "manual_approval"),
+                        mode=ResponseMode.RECOMMEND,
+                        status="awaiting_approval",
+                    )
+                    executed_act = executor.approve_and_execute(act_obj, approved_by=req.approver)
+                    exec_details = executed_act.triggered_by
+                except Exception as e:
+                    exec_details = f"Executed with warning: {e}"
+
                 st.audit_log.insert(0, {
                     "id": str(uuid.uuid4()),
                     "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -288,7 +462,7 @@ async def approve_action(req: ActionApproveRequest, host: Optional[str] = "live"
                     "action_type": action["action_type"],
                     "target": action["target"],
                     "status": "SUCCESS",
-                    "details": f"Human-in-the-loop approved and executed {action['action_type']} on {action['target']}",
+                    "details": f"Analyst authorized {action['action_type']} | {exec_details}",
                 })
             else:
                 action["status"] = "rejected"
@@ -369,4 +543,202 @@ async def copilot_chat(req: CopilotQuestion, host: Optional[str] = "live"):
 async def copilot_history(host: Optional[str] = "live"):
     st = manager.get_state(host)
     return {"history": st.chat_history}
+
+
+class ScanRequest(BaseModel):
+    path: str
+    max_files: Optional[int] = 200
+
+
+@app.post("/api/scan/file")
+async def scan_file_endpoint(req: ScanRequest):
+    """On-demand file scan against known threat signatures and heuristics."""
+    if not os.path.exists(req.path):
+        raise HTTPException(status_code=404, detail="File path not found")
+    res = scanner.scan_file(req.path)
+    return {
+        "status": "threat_detected" if res.is_threat else "clean",
+        "result": {
+            "path": res.target_path,
+            "is_threat": res.is_threat,
+            "threat_name": res.threat_name,
+            "threat_type": res.threat_type,
+            "severity": res.severity,
+            "confidence": res.confidence,
+            "sha256": res.sha256,
+            "description": res.description,
+        }
+    }
+
+
+@app.post("/api/scan/directory")
+async def scan_directory_endpoint(req: ScanRequest):
+    """On-demand directory/filesystem scan."""
+    if not os.path.exists(req.path):
+        raise HTTPException(status_code=404, detail="Directory path not found")
+    threats = scanner.scan_directory(req.path, max_files=req.max_files or 200)
+    return {
+        "scanned_path": req.path,
+        "threats_found_count": len(threats),
+        "threats": [
+            {
+                "path": t.target_path,
+                "threat_name": t.threat_name,
+                "severity": t.severity,
+                "confidence": t.confidence,
+                "sha256": t.sha256,
+                "description": t.description,
+            }
+            for t in threats
+        ]
+    }
+
+
+# ==============================================================================
+# v2.0 MODULE ENDPOINTS (Threat Intel, Case Workspace, UEBA, Replay)
+# ==============================================================================
+
+# 1. Threat Intelligence Fusion (Module 11)
+@app.get("/api/threat_intel/feed")
+async def get_threat_intel_feed():
+    return {
+        "ioc_count": len(threat_intel.feed),
+        "indicators": [
+            {
+                "indicator": i.indicator,
+                "indicator_type": i.indicator_type,
+                "threat_actor": i.threat_actor,
+                "campaign": i.campaign,
+                "severity": i.severity,
+                "confidence": i.confidence,
+                "description": i.description,
+                "tags": i.tags,
+            }
+            for i in threat_intel.feed.values()
+        ],
+    }
+
+
+@app.get("/api/threat_intel/lookup")
+async def lookup_threat_indicator(query: str):
+    hit = threat_intel.lookup(query)
+    if not hit:
+        return {"hit": False, "query": query}
+    return {
+        "hit": True,
+        "indicator": {
+            "indicator": hit.indicator,
+            "indicator_type": hit.indicator_type,
+            "threat_actor": hit.threat_actor,
+            "campaign": hit.campaign,
+            "severity": hit.severity,
+            "confidence": hit.confidence,
+            "description": hit.description,
+            "tags": hit.tags,
+        },
+    }
+
+
+# 2. Case Management Workspace (Module 12)
+class CreateCaseRequest(BaseModel):
+    title: str
+    host_id: str = "cachyos-x8664"
+    severity: str = "HIGH"
+    assigned_to: str = "Lead_SOC_Analyst"
+    evidence_event_ids: Optional[list[int]] = []
+    mitre_technique_ids: Optional[list[str]] = []
+
+
+class AddNoteRequest(BaseModel):
+    author: str = "Lead_SOC_Analyst"
+    content: str
+
+
+@app.get("/api/cases")
+async def list_cases():
+    return {"cases": case_service.list_cases()}
+
+
+@app.post("/api/cases")
+async def create_case(req: CreateCaseRequest):
+    c = case_service.create_case(
+        title=req.title,
+        host_id=req.host_id,
+        severity=req.severity,
+        assigned_to=req.assigned_to,
+        evidence_event_ids=req.evidence_event_ids,
+        mitre_technique_ids=req.mitre_technique_ids,
+    )
+    return {"status": "created", "case": c.to_dict()}
+
+
+@app.get("/api/cases/{case_id}")
+async def get_case(case_id: str):
+    c = case_service.get_case(case_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return {"case": c.to_dict()}
+
+
+@app.post("/api/cases/{case_id}/notes")
+async def add_case_note(case_id: str, req: AddNoteRequest):
+    try:
+        note = case_service.add_note(case_id, author=req.author, content=req.content)
+        return {"status": "note_added", "note": note.__dict__}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+
+@app.get("/api/cases/{case_id}/export")
+async def export_case_binder(case_id: str):
+    try:
+        binder = case_service.export_case_binder(case_id)
+        return binder
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+
+# 3. User & Entity Behavior Analytics (Module 17)
+@app.get("/api/ueba/anomalies")
+async def get_ueba_anomalies(host: Optional[str] = "live"):
+    st = manager.get_state(host)
+    anomalies = ueba.analyze_events(st.events)
+    return {
+        "host_id": st.host_id,
+        "anomaly_count": len(anomalies),
+        "anomalies": [
+            {
+                "user_id": a.user_id,
+                "user_name": a.user_name,
+                "anomaly_type": a.anomaly_type,
+                "severity": a.severity,
+                "anomaly_score": a.anomaly_score,
+                "evidence": a.evidence,
+                "timestamp": a.timestamp,
+            }
+            for a in anomalies
+        ],
+    }
+
+
+# 4. Digital Twin Attack Simulation & Replay (Module 19)
+class BuildReplayRequest(BaseModel):
+    host_id: str = "cachyos-x8664"
+
+
+@app.post("/api/replay/build")
+async def build_replay_session(req: BuildReplayRequest, host: Optional[str] = "test"):
+    st = manager.get_state(host)
+    session_id = replay_service.build_digital_twin_replay(req.host_id, st.events)
+    return {"status": "built", "session_id": session_id, "host_id": req.host_id}
+
+
+@app.get("/api/replay/step")
+async def get_replay_step(session_id: str, step: int = 1):
+    sn = replay_service.get_snapshot(session_id, step)
+    if not sn:
+        raise HTTPException(status_code=404, detail="Replay session or step not found")
+    return sn
+
+
 

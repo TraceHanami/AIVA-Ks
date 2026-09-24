@@ -2,6 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
+[![CI Pipeline](https://github.com/TraceHanami/AIVA-Ks/actions/workflows/ci.yml/badge.svg)](https://github.com/TraceHanami/AIVA-Ks/actions/workflows/ci.yml)
 [![Build Status](https://img.shields.io/badge/tests-passing-brightgreen.svg)](tests/)
 [![Architecture](https://img.shields.io/badge/Architecture-CO--RE%20eBPF-orange.svg)](docs/ARCHITECTURE.md)
 
@@ -68,34 +69,111 @@ Legend: ✅ Verified & Tested · 🟡 Implemented / Needs Infrastructure · ⬜ 
 
 ## ⚡ Quickstart
 
-### 1. Zero-Infrastructure Pipeline Demo
-Run the end-to-end intelligence demo directly from the command line:
-
+### 1. Setup Environment
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/aiva-ks.git
-cd aiva-ks
+git clone https://github.com/TraceHanami/AIVA-Ks.git
+cd AIVA-Ks
 
-# Run the full pipeline demo
+# Install Python and Frontend dependencies
+make setup
+```
+
+### 2. Run the Project
+
+#### Option A: Run Full Stack (Backend API + React SOC Dashboard)
+```bash
+make run
+```
+- **Backend API**: [http://127.0.0.1:8000](http://127.0.0.1:8000) (Interactive OpenAPI docs at [`/docs`](http://127.0.0.1:8000/docs))
+- **Frontend Dashboard**: [http://127.0.0.1:5173](http://127.0.0.1:5173)
+
+#### Option B: Run Services Individually
+```bash
+# Run FastAPI Backend only
+make run-backend
+
+# Run React/Vite Frontend only
+make run-ui
+```
+
+#### Option C: Run via Docker Compose
+```bash
+# Bring up PostgreSQL/TimescaleDB, Kafka, Zookeeper, Backend API, and Frontend
+make docker-up
+
+# Stop all containerized services
+make docker-down
+```
+
+### 3. Check System Status (CLI)
+```bash
+make cli
+# or directly:
+chronos status
+```
+
+### 4. Linux & Ubuntu Early-Boot Security & Vulnerability Scan
+Perform an instant kernel posture, SUID privilege hazard, persistence, and malware audit:
+```bash
+make boot-scan
+# or via CLI:
+chronos boot-scan
+```
+> For complete instructions to enable this as an automated early-boot service on Linux/Ubuntu, see [`PROCEDURE.md`](PROCEDURE.md).
+
+### 5. Zero-Infrastructure Intelligence Pipeline Demos
+Run the end-to-end intelligence and graph demos:
+```bash
 python3 demo_full_pipeline.py
+python3 demo_run.py
 ```
 
-### 2. Run Automated Test Suite
+### 6. Automated Test Suite
 ```bash
-python3 -m pytest tests/ -v
-```
-*or using the Makefile:*
-```bash
+# Run 27+ integration, e2e, and unit tests
 make test
+
+# Run tests with coverage report
+pytest tests/ -v --cov=chronos --cov=ai --cov-report=term
 ```
 
-### 3. Developer Workflows (`Makefile`)
-```bash
-make help       # View all available developer commands
-make setup      # Install python dependencies
-make lint       # Run syntax and lint checks across the codebase
-make clean      # Clean up cache files
+---
+
+## 🚀 CI/CD Pipeline
+
+AIVA-KS features an enterprise-grade GitHub Actions CI/CD automation matrix:
+
 ```
+                  ┌────────────────────────────────────────────────────────┐
+                  │                    GitHub Actions                      │
+                  └───────────┬────────────────────────────────┬───────────┘
+                              │                                │
+                  ┌───────────▼───────────┐        ┌───────────▼───────────┐
+                  │     CI Pipeline       │        │     CD Pipeline       │
+                  │ (.github/workflows/   │        │ (.github/workflows/   │
+                  │         ci.yml)       │        │         cd.yml)       │
+                  └───────────┬───────────┘        └───────────┬───────────┘
+                              │                                │
+        ┌─────────────────────┼──────────────────────┐         │
+        ▼                     ▼                      ▼         ▼
+┌───────────────┐     ┌───────────────┐      ┌───────────────┐ ┌───────────────┐
+│ Python Matrix │     │ Frontend      │      │ Docker Build  │ │ PyPI / Wheel  │
+│ (3.10, 3.11,  │     │ oxlint, Vite  │      │ Verification  │ │ GHCR Images   │
+│  3.12) Pytest │     │ Build & Assets│      │ (Multi-stage) │ │ GitHub Release│
+└───────────────┘     └───────────────┘      └───────────────┘ └───────────────┘
+```
+
+1. **Continuous Integration ([`.github/workflows/ci.yml`](.github/workflows/ci.yml))**:
+   - **Python Test Matrix**: Validates Python syntax and runs 27 unit, integration, and E2E tests across Python 3.10, 3.11, and 3.12.
+   - **Frontend CI**: Automates dependency caching, Oxlint static analysis, and TypeScript/Vite production builds.
+   - **Docker Verification**: Validates Docker Compose configs and verifies multi-stage Docker builds for API engine, frontend dashboard, and feature extraction.
+   - **Pipeline Demo Verification**: Runs `demo_full_pipeline.py` and `demo_run.py` to ensure runtime safety invariants hold.
+
+2. **Continuous Delivery ([`.github/workflows/cd.yml`](.github/workflows/cd.yml))**:
+   - **Package Distribution**: Builds source and binary `.whl` distributions.
+   - **Container Registry Publishing**: Automatically builds, tags, and pushes production images to GitHub Container Registry (`ghcr.io`).
+   - **Automated Releases**: Generates changelog and publishes GitHub Releases upon tag creation (`v*.*.*`).
 
 ---
 
